@@ -1,0 +1,27 @@
+# Flow
+- Customers do not exist in Chargebee so should be created
+- For all transaction, users will pay a $100 USD fixed.
+- No need to calculate tax
+
+Step 1-A Card Payments
+https://www.chargebee.com/checkout-portal-docs/payment-method-helper.html#card-based-payments
+
+Collect user card details using Chargebee Payment Method Helpers. With a fixed 100
+USD transaction, initiate payment intent.
+
+
+Step 1-B Paypal Payments:
+Login to the user's Paypal account by using Chargebee Paypal helper. With a fixed 100
+USD transaction, initiate payment intent.
+
+Wallet-based Payments - https://www.chargebee.com/checkout-portal-docs/payment-method-helper.html#wallet-based-payments
+
+
+1. Vue 2 app?
+1. Setup backend API for payment intent
+2. How to test
+3. Deadline
+
+
+Create a Payment Intent -  This must be done from your backend to avoid exposing sensitive data.
+https://www.chargebee.com/checkout-portal-docs/paypal-tutorial.html

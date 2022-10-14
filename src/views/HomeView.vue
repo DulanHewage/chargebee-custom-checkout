@@ -4,6 +4,10 @@ import PaymentForm from "../components/PaymentForm.vue";
 
 <template>
   <main>
-    <PaymentForm msg="Hello"/>
+    <div class="container">
+      <div class="d-flex justify-content-center">
+        <PaymentForm />
+      </div>
+    </div>
   </main>
 </template>

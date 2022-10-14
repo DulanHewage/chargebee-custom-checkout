@@ -1,5 +1,7 @@
 <script setup>
-import { nextTick, onMounted, ref } from "vue";
+import { nextTick, onMounted, reactive, ref } from "vue";
+import Button from "./Button.vue";
+import Alert from "./Alert.vue";
 
 const props = defineProps({
   amount: {
@@ -9,8 +11,18 @@ const props = defineProps({
 });
 
 const paymentType = ref("card");
+const cardDetails = reactive({
+  firstName: undefined,
+  lastName: undefined,
+  number: undefined,
+  expiryMonth: undefined,
+  expiryYear: undefined,
+  cvv: undefined,
+});
 
-let cbInstance;
+let cbInstancePayPal;
+let cbInstanceCard;
+let threeDS;
 
 function createPaymentIntent(options) {
   // create a payment intent
@@ -19,9 +31,9 @@ function createPaymentIntent(options) {
   myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
 
   const urlencoded = new URLSearchParams();
-  urlencoded.append("amount", options.amount);
-  urlencoded.append("currency_code", options.currency_code);
-  urlencoded.append("payment_method_type", options.payment_method_type);
+  Object.keys(options).forEach((key) => {
+    urlencoded.append(key, options[key]);
+  });
 
   const requestOptions = {
     method: "POST",
@@ -45,11 +57,12 @@ function createPaymentIntent(options) {
 function mountPayPalButton() {
   // creates the payment intent for PayPal
   // mounts the PayPal button inside the container element.
-  cbInstance.load("paypal").then((paypalHandler) => {
+  cbInstancePayPal.load("paypal").then((paypalHandler) => {
     createPaymentIntent({
       amount: 100,
       currency_code: "USD",
       payment_method_type: "paypal_express_checkout",
+      customer_id: "BTcLTtTJqNPAo6wg",
     })
       .then((payment_intent) => {
         paypalHandler.setPaymentIntent(payment_intent);
@@ -77,44 +90,219 @@ function mountPayPalButton() {
   });
 }
 
+function loadCardPayment() {
+  cbInstanceCard
+    .load3DSHandler()
+    .then((threeDSHandler) => {
+      threeDS = threeDSHandler;
+      return createPaymentIntent({
+        amount: 100,
+        gateway_account_id: "gw_BTcXgiSvoLwKt1a6",
+        currency_code: "USD",
+      });
+    })
+    .then((paymentIntent) => {
+      if (paymentIntent.error_code) {
+        console.log("error creating payment intent");
+        console.log(paymentIntent);
+      } else {
+        threeDS.setPaymentIntent(paymentIntent);
+      }
+    });
+}
+
+function formSubmitionHandler() {
+  if (threeDS === undefined) {
+    console.log("card payment isnt loaded");
+    return;
+  }
+  threeDS
+    .handleCardPayment({
+      card: cardDetails,
+    })
+    .then((paymentIntent) => {
+      console.log(paymentIntent);
+      console.log(`Payment is ${paymentIntent.status}`);
+    })
+    .catch((error) => {
+      console.log(`Failed to Authorize`, error);
+    });
+}
+
 onMounted(() => {
   nextTick(() => {
     // create chargebee instance
     // eslint-disable-next-line no-undef
-    cbInstance = Chargebee.init({
+    cbInstanceCard = Chargebee.init({
       site: "poliigon-test",
       publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
+      // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
     });
+
+    // mountPayPalButton();
+    // loadCardPayment();
   });
 });
 </script>
 
 <template>
   <div class="payment-form-wrapper">
-    <h1>{{ msg }}</h1>
-    <input
-      type="radio"
-      name="payment_type"
-      v-model="paymentType"
-      value="card"
-    />
-    <input
-      type="radio"
-      name="payment_type"
-      v-model="paymentType"
-      value="paypal"
-    />
-    <div class="card-section" v-show="paymentType === 'card'">card</div>
-    <div class="paypal-section" v-show="paymentType === 'paypal'">
-      <div id="paypal-button"></div>
+    <div class="headline">Select a payment method</div>
+    <div class="card-section">
+      <div class="radio-btn d-flex align-items-center">
+        <input
+          type="radio"
+          name="payment_type"
+          v-model="paymentType"
+          value="card"
+          id="payment_type_card"
+        />
+        <label class="label" for="payment_type_card"
+          >Credit or debit card</label
+        >
+      </div>
+      <div class="card-section-body" v-show="paymentType === 'card'">
+        <form class="form-group">
+          <div
+            class="form-row d-flex align-items-center justify-content-between"
+          >
+            <div class="form-input">
+              <div class="label">First Name</div>
+              <input
+                type="text"
+                name="firstname"
+                placeholder="John"
+                v-model="cardDetails.firstName"
+              />
+            </div>
+            <div class="form-input">
+              <div class="label">Last Name</div>
+              <input
+                type="text"
+                name="lastname"
+                placeholder="Doe"
+                v-model="cardDetails.lastName"
+              />
+            </div>
+          </div>
+          <div
+            class="form-row d-flex align-items-center justify-content-between"
+          >
+            <div class="form-input">
+              <div class="label">Card Number</div>
+              <input
+                type="text"
+                name="number"
+                placeholder="4111 1111 1111 1111"
+                v-model="cardDetails.number"
+              />
+            </div>
+            <div class="form-input">
+              <div class="label">Expiration Date</div>
+              <div class="d-flex">
+                <input
+                  type="text"
+                  name="expiryMonth"
+                  class="mr-4"
+                  placeholder="MM"
+                  v-model="cardDetails.expiryMonth"
+                />
+                <input
+                  type="text"
+                  name="expiryYear"
+                  placeholder="YYYY"
+                  v-model="cardDetails.expiryYear"
+                />
+              </div>
+            </div>
+          </div>
+          <div
+            class="form-row d-flex align-items-center justify-content-between"
+          >
+            <div class="form-input">
+              <div class="label">CVV</div>
+              <input
+                type="text"
+                name="cvv"
+                placeholder="CVV"
+                v-model="cardDetails.cvv"
+              />
+            </div>
+            <div class="form-input">
+              <div class="label">Post Code</div>
+              <input type="text" name="postcode" placeholder="Post Code" />
+            </div>
+          </div>
+        </form>
+        <Button @click="formSubmitionHandler" class="mt-16 mb-8"
+          >Checkout Securely</Button
+        >
+      </div>
+    </div>
+    <div class="paypal-section">
+      <div class="radio-btn d-flex align-items-center">
+        <input
+          type="radio"
+          name="payment_type"
+          v-model="paymentType"
+          value="paypal"
+          id="payment_type_paypal"
+        />
+        <label class="label" for="payment_type_paypal">Pay with PayPal</label>
+      </div>
+      <div class="paypal-section-body" v-show="paymentType === 'paypal'">
+        <div id="paypal-button">paypal button here</div>
+      </div>
     </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .payment-form-wrapper {
-  h1 {
-    color: red;
+  width: 640px;
+  padding: 24px 24px;
+  background-color: #fff;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border-radius: 6px;
+  font-size: 1.25rem;
+  color: #212529;
+  .radio-btn {
+    input {
+      margin-right: 8px;
+    }
+    .label {
+      font-size: 1.12rem;
+    }
+  }
+  .form-group {
+    .form-row {
+      margin-top: 8px;
+      .form-input {
+        width: 100%;
+        &:first-child {
+          margin-right: 8px;
+        }
+        &:last-child {
+          margin-left: 8px;
+        }
+        .label {
+          font-size: 1rem;
+          font-weight: 600;
+          margin-right: 8px;
+        }
+        input {
+          height: 32px;
+          width: 100%;
+          border: 1px solid #ccc;
+          padding: 8px 4px;
+          border-radius: 4px;
+          &:focus {
+            outline: none;
+            border: 1px solid #212529;
+          }
+        }
+      }
+    }
   }
 }
 </style>

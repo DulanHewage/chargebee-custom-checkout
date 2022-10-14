@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import Button from "./Button.vue";
 import Alert from "./Alert.vue";
 
@@ -7,6 +7,10 @@ const props = defineProps({
   amount: {
     type: Number,
     required: true,
+  },
+  currency_code: {
+    type: String,
+    default: "USD",
   },
 });
 
@@ -67,8 +71,8 @@ function mountPayPalButton() {
 
   cbInstancePayPal.load("paypal").then((paypalHandler) => {
     createPaymentIntent({
-      amount: 100,
-      currency_code: "USD",
+      amount: props.amount,
+      currency_code: props.currency_code,
       payment_method_type: "paypal_express_checkout",
       customer_id: "BTcLTtTJqNPAo6wg",
     })
@@ -108,9 +112,9 @@ function loadCardPayment() {
     .then((threeDSHandler) => {
       threeDS = threeDSHandler;
       return createPaymentIntent({
-        amount: 100,
+        amount: props.amount,
         gateway_account_id: "gw_BTcXgiSvoLwKt1a6",
-        currency_code: "USD",
+        currency_code: props.currency_code,
       });
     })
     .then((paymentIntent) => {
@@ -295,7 +299,7 @@ onMounted(() => {
         <label class="label" for="payment_type_paypal">Pay with PayPal</label>
       </div>
       <div class="paypal-section-body" v-show="paymentType === 'paypal'">
-        <div id="paypal-button"></div>
+        <div id="paypal-button" class="mt-8"></div>
       </div>
     </div>
     <Alert

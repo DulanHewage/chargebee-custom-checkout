@@ -25,3 +25,24 @@ Wallet-based Payments - https://www.chargebee.com/checkout-portal-docs/payment-m
 
 Create a Payment Intent -  This must be done from your backend to avoid exposing sensitive data.
 https://www.chargebee.com/checkout-portal-docs/paypal-tutorial.html
+
+
+chargebee.js script should be loaded through Chargebee server for PCI compliance. DO NOT download and load it via your server.
+https://www.chargebee.com/checkout-portal-docs/settingup-api-ref.html#introduction
+
+
+1. create customers page
+  - add customer form 
+  - retrive all customers from API and populate customers state
+  - list down customers
+2. select customer to do the payment
+  - select handler
+4. do the payment using that customer
+5. 
+
+
+
+deliverables
+
+1. github repos
+2. video

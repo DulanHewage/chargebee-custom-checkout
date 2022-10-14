@@ -19,6 +19,11 @@ const cardDetails = reactive({
   expiryYear: undefined,
   cvv: undefined,
 });
+const alertStatus = reactive({
+  type: undefined,
+  msg: undefined,
+});
+const isLoading = ref(false);
 
 let cbInstancePayPal;
 let cbInstanceCard;
@@ -57,6 +62,9 @@ function createPaymentIntent(options) {
 function mountPayPalButton() {
   // creates the payment intent for PayPal
   // mounts the PayPal button inside the container element.
+  alertStatus.type = undefined;
+  alertStatus.msg = undefined;
+
   cbInstancePayPal.load("paypal").then((paypalHandler) => {
     createPaymentIntent({
       amount: 100,
@@ -81,10 +89,14 @@ function mountPayPalButton() {
       })
       .then((paymentIntent) => {
         // handle success
-        console.log("success", paymentIntent);
+        console.log(paymentIntent);
+        alertStatus.type = "success";
+        alertStatus.msg = `Payment is ${paymentIntent.status}`;
       })
       .catch((error) => {
         console.log("error", error);
+        alertStatus.type = "error";
+        alertStatus.msg = `Failed to Authorize`;
         // handle error
       });
   });
@@ -113,9 +125,12 @@ function loadCardPayment() {
 
 function formSubmitionHandler() {
   if (threeDS === undefined) {
-    console.log("card payment isnt loaded");
+    console.log("cbInstance isn't loaded");
     return;
   }
+  alertStatus.type = undefined;
+  alertStatus.msg = undefined;
+  isLoading.value = true;
   threeDS
     .handleCardPayment({
       card: cardDetails,
@@ -123,25 +138,49 @@ function formSubmitionHandler() {
     .then((paymentIntent) => {
       console.log(paymentIntent);
       console.log(`Payment is ${paymentIntent.status}`);
+      alertStatus.type = "success";
+      alertStatus.msg = `Payment is ${paymentIntent.status}`;
+      isLoading.value = false;
+      resetCardDetailsForm();
     })
     .catch((error) => {
       console.log(`Failed to Authorize`, error);
+      alertStatus.type = "error";
+      alertStatus.msg = `Failed to Authorize`;
+      isLoading.value = false;
     });
 }
 
-onMounted(() => {
-  nextTick(() => {
-    // create chargebee instance
-    // eslint-disable-next-line no-undef
-    cbInstanceCard = Chargebee.init({
-      site: "poliigon-test",
-      publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
-      // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
-    });
+function resetCardDetailsForm() {
+  cardDetails.firstName = undefined;
+  cardDetails.lastName = undefined;
+  cardDetails.number = undefined;
+  cardDetails.expiryMonth = undefined;
+  cardDetails.expiryYear = undefined;
+  cardDetails.cvv = undefined;
+}
 
-    // mountPayPalButton();
-    // loadCardPayment();
+function paymentTypeSelectHandler() {
+  alertStatus.type = undefined;
+  alertStatus.msg = undefined;
+}
+
+onMounted(() => {
+  // create chargebee instances
+  // eslint-disable-next-line no-undef
+  cbInstanceCard = Chargebee.init({
+    site: "poliigon-test",
+    publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
+    // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
   });
+  // eslint-disable-next-line no-undef
+  cbInstancePayPal = Chargebee.init({
+    site: "poliigon-test",
+    publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
+    // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
+  });
+  mountPayPalButton();
+  loadCardPayment();
 });
 </script>
 
@@ -156,6 +195,7 @@ onMounted(() => {
           v-model="paymentType"
           value="card"
           id="payment_type_card"
+          @change="paymentTypeSelectHandler"
         />
         <label class="label" for="payment_type_card"
           >Credit or debit card</label
@@ -234,7 +274,10 @@ onMounted(() => {
             </div>
           </div>
         </form>
-        <Button @click="formSubmitionHandler" class="mt-16 mb-8"
+        <Button
+          @click="formSubmitionHandler"
+          class="mt-16 mb-8"
+          :loading="isLoading"
           >Checkout Securely</Button
         >
       </div>
@@ -247,13 +290,20 @@ onMounted(() => {
           v-model="paymentType"
           value="paypal"
           id="payment_type_paypal"
+          @change="paymentTypeSelectHandler"
         />
         <label class="label" for="payment_type_paypal">Pay with PayPal</label>
       </div>
       <div class="paypal-section-body" v-show="paymentType === 'paypal'">
-        <div id="paypal-button">paypal button here</div>
+        <div id="paypal-button"></div>
       </div>
     </div>
+    <Alert
+      :error="alertStatus.type === 'error'"
+      :success="alertStatus.type === 'success'"
+      v-if="alertStatus.type"
+      >{{ alertStatus.msg }}</Alert
+    >
   </div>
 </template>
 

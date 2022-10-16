@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from "vue";
 import Button from "./Button.vue";
 import Alert from "./Alert.vue";
+import { computed } from "vue";
 
 const props = defineProps({
   amount: {
@@ -13,8 +14,8 @@ const props = defineProps({
     default: "USD",
   },
 });
-
 const paymentType = ref("card");
+const isLoading = ref(false);
 const cardDetails = reactive({
   firstName: undefined,
   lastName: undefined,
@@ -27,12 +28,20 @@ const alertStatus = reactive({
   type: undefined,
   msg: undefined,
 });
-const isLoading = ref(false);
-
+const info = reactive({
+  customerName: undefined,
+  chargebee_id: undefined,
+  transactionID: undefined,
+  invoiceID: undefined,
+});
+const cardNumber = computed(() => {
+  return cardDetails.number.replaceAll(/\s/g, "");
+});
 let cbInstancePayPal;
 let cbInstanceCard;
 let threeDS;
 
+// create payment intent API call
 function createPaymentIntent(options) {
   // create a payment intent
   // call /generate_payment_intent API
@@ -74,7 +83,6 @@ function mountPayPalButton() {
       amount: props.amount,
       currency_code: props.currency_code,
       payment_method_type: "paypal_express_checkout",
-      customer_id: "BTcLTtTJqNPAo6wg",
     })
       .then((payment_intent) => {
         paypalHandler.setPaymentIntent(payment_intent);
@@ -93,14 +101,38 @@ function mountPayPalButton() {
       })
       .then((paymentIntent) => {
         // handle success
-        console.log(paymentIntent);
-        alertStatus.type = "success";
-        alertStatus.msg = `Payment is ${paymentIntent.status}`;
+        // payment intent status = authorized
+        console.log("payment intent", paymentIntent);
+        // collect customer details
+        const customerDetails = {
+          first_name: paymentIntent.payer_info.customer.firstName,
+          last_name: paymentIntent.payer_info.customer.lastName,
+          email: paymentIntent.payer_info.customer.email,
+          payment_intent: paymentIntent,
+          payment_method: {
+            type: "paypal_express_checkout",
+          },
+          gateway_account_id: "gw_BTLWOTSyiKGENPbI",
+        };
+        // create new customer
+        createCustomer(customerDetails)
+          .then(({ customer }) => {
+            alertStatus.type = "success";
+            alertStatus.msg = `Payment is ${paymentIntent.status}`;
+            console.log("customer created: ", customer);
+            // display info
+            displayInfo(customer, paymentIntent);
+          })
+          .catch((error) => {
+            console.log("error creating the customer", error);
+            alertStatus.type = "error";
+            alertStatus.msg = `Failed to create a customer`;
+          });
       })
       .catch((error) => {
         console.log("error", error);
         alertStatus.type = "error";
-        alertStatus.msg = `Failed to Authorize`;
+        alertStatus.msg = `Failed to authorize`;
         // handle error
       });
   });
@@ -119,11 +151,37 @@ function loadCardPayment() {
     })
     .then((paymentIntent) => {
       if (paymentIntent.error_code) {
-        console.log("error creating payment intent");
+        console.error("error creating payment intent");
         console.log(paymentIntent);
       } else {
+        // payment intent status = inited
         threeDS.setPaymentIntent(paymentIntent);
       }
+    });
+}
+// create customer API call
+function createCustomer(options) {
+  const myHeaders = new Headers();
+  myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
+
+  const urlencoded = new URLSearchParams();
+  Object.keys(options).forEach((key) => {
+    urlencoded.append(key, options[key]);
+  });
+
+  const requestOptions = {
+    method: "POST",
+    headers: myHeaders,
+    body: urlencoded,
+    redirect: "follow",
+  };
+
+  return fetch("http://localhost:3000/api/customer", requestOptions)
+    .then(function (response) {
+      return response.json();
+    })
+    .then(function (responseJson) {
+      return responseJson;
     });
 }
 
@@ -135,17 +193,52 @@ function formSubmitionHandler() {
   alertStatus.type = undefined;
   alertStatus.msg = undefined;
   isLoading.value = true;
+  const modifiedCardDetails = {
+    ...Object.fromEntries(
+      Object.entries(cardDetails).filter(([key]) => key !== "number")
+    ),
+    number: cardNumber.value,
+  };
+  console.log("modified card", modifiedCardDetails);
   threeDS
     .handleCardPayment({
-      card: cardDetails,
+      card: modifiedCardDetails,
     })
     .then((paymentIntent) => {
-      console.log(paymentIntent);
-      console.log(`Payment is ${paymentIntent.status}`);
-      alertStatus.type = "success";
-      alertStatus.msg = `Payment is ${paymentIntent.status}`;
-      isLoading.value = false;
-      resetCardDetailsForm();
+      // payment intent status = authorized
+      // create customer
+      const customerData = {
+        first_name: cardDetails.firstName,
+        last_name: cardDetails.lastName,
+        card: {
+          gateway_account_id: paymentIntent.gateway_account_id,
+          first_name: cardDetails.firstName,
+          last_name: cardDetails.lastName,
+          number: cardNumber.value,
+          expiry_month: cardDetails.expiryMonth,
+          expiry_year: cardDetails.expiryYear,
+          cvv: cardDetails.cvv,
+          payment_intent: {
+            id: paymentIntent.id,
+            gateway_account_id: paymentIntent.gateway_account_id,
+            // gw_token: "",
+            payment_method_type: paymentIntent.payment_method_type,
+          },
+        },
+      };
+      console.log("after submission", paymentIntent);
+      console.log("before customerData", customerData);
+      console.log("creating new customer...");
+      createCustomer(customerData).then(({ customer }) => {
+        console.log("customer created", customer);
+
+        console.log(`Payment is ${paymentIntent.status}`);
+        alertStatus.type = "success";
+        alertStatus.msg = `Payment is ${paymentIntent.status}`;
+        isLoading.value = false;
+        displayInfo(customer, paymentIntent);
+        resetCardDetailsForm();
+      });
     })
     .catch((error) => {
       console.log(`Failed to Authorize`, error);
@@ -164,9 +257,30 @@ function resetCardDetailsForm() {
   cardDetails.cvv = undefined;
 }
 
+function resetInfo() {
+  info.customerName = undefined;
+  info.chargebee_id = undefined;
+  info.invoiceID = undefined;
+  info.transactionID = undefined;
+}
+
+function displayInfo(customer, authorizedPaymentIntent) {
+  if (customer.first_name && customer.last_name) {
+    info.customerName = `${customer.first_name} ${customer.last_name}`;
+  } else if (customer.first_name) {
+    info.customerName = customer.first_name;
+  } else {
+    info.customerName = customer.last_name;
+  }
+  info.chargebee_id = customer.id;
+  info.invoiceID = undefined;
+  info.transactionID = authorizedPaymentIntent.id;
+}
+
 function paymentTypeSelectHandler() {
   alertStatus.type = undefined;
   alertStatus.msg = undefined;
+  resetInfo();
 }
 
 onMounted(() => {
@@ -183,8 +297,8 @@ onMounted(() => {
     publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
     // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
   });
-  mountPayPalButton();
-  loadCardPayment();
+  // mountPayPalButton();
+  // loadCardPayment();
 });
 </script>
 
@@ -308,6 +422,27 @@ onMounted(() => {
       v-if="alertStatus.type"
       >{{ alertStatus.msg }}</Alert
     >
+    <div class="info py-4">
+      <p>
+        <span class="font-weight-bold" v-if="info.customerName">
+          Customer name: </span
+        >{{ info.customerName }}
+      </p>
+      <p>
+        <span class="font-weight-bold" v-if="info.chargebee_id">
+          Customer chargebee_id: </span
+        >{{ info.chargebee_id }}
+      </p>
+      <p>
+        <span class="font-weight-bold" v-if="info.transactionID">
+          Transaction ID: </span
+        >{{ info.transactionID }}
+      </p>
+      <p>
+        <span class="font-weight-bold" v-if="info.invoiceID">Invoice ID: </span
+        >{{ info.invoiceID }}
+      </p>
+    </div>
   </div>
 </template>
 

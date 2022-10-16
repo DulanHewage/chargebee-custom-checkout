@@ -49,3 +49,14 @@
 .mr-4 {
   margin-right: 4px;
 }
+.py-4 {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.py-8 {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.font-weight-bold {
+  font-weight: bold;
+}

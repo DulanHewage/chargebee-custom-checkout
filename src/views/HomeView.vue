@@ -6,7 +6,7 @@ import PaymentForm from "../components/PaymentForm.vue";
   <main>
     <div class="container">
       <div class="d-flex justify-content-center">
-        <PaymentForm amount="100" />
+        <PaymentForm :amount="100" />
       </div>
     </div>
   </main>

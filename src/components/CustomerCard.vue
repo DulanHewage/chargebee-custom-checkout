@@ -20,7 +20,7 @@ const props = defineProps({
 
 const fullName = computed(() => {
   if (props.customer.first_name && props.customer.last_name) {
-    return `${props.customer.first} ${props.customer.last_name}`;
+    return `${props.customer.first_name} ${props.customer.last_name}`;
   } else {
     return "name missing";
   }

@@ -26,7 +26,7 @@ function retrieveCustomers() {
     redirect: "follow",
   };
 
-  fetch("http://localhost:3000/api/customers", requestOptions)
+  fetch("http://localhost:3000/api/customer/list", requestOptions)
     .then((response) => response.json())
     .then((result) => {
       // Sets retrieved customer data to customerStore

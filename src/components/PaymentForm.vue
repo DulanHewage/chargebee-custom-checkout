@@ -1,8 +1,8 @@
 <script setup>
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, computed } from "vue";
 import Button from "./Button.vue";
 import Alert from "./Alert.vue";
-import { computed } from "vue";
+import useAPI from "../api/useAPI";
 
 const props = defineProps({
   amount: {
@@ -14,8 +14,11 @@ const props = defineProps({
     default: "USD",
   },
 });
+
 const paymentType = ref("card");
 const isLoading = ref(false);
+const alertBag = ref([]);
+
 const cardDetails = reactive({
   firstName: undefined,
   lastName: undefined,
@@ -24,59 +27,27 @@ const cardDetails = reactive({
   expiryYear: undefined,
   cvv: undefined,
 });
-const alertStatus = reactive({
-  type: undefined,
-  msg: undefined,
-});
 const info = reactive({
   customerName: undefined,
   chargebee_id: undefined,
   transactionID: undefined,
   invoiceID: undefined,
 });
+
 const cardNumber = computed(() => {
-  return cardDetails.number.replaceAll(/\s/g, "");
+  return cardDetails.number && cardDetails.number.replaceAll(/\s/g, "");
 });
+
 let cbInstancePayPal;
 let cbInstanceCard;
 let threeDS;
 
-// create payment intent API call
-function createPaymentIntent(options) {
-  // create a payment intent
-  // call /generate_payment_intent API
-  const myHeaders = new Headers();
-  myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
-
-  const urlencoded = new URLSearchParams();
-  Object.keys(options).forEach((key) => {
-    urlencoded.append(key, options[key]);
-  });
-
-  const requestOptions = {
-    method: "POST",
-    headers: myHeaders,
-    body: urlencoded,
-    redirect: "follow",
-  };
-
-  return fetch(
-    "http://localhost:3000/api/generate_payment_intent",
-    requestOptions
-  )
-    .then(function (response) {
-      return response.json();
-    })
-    .then(function (responseJson) {
-      return responseJson;
-    });
-}
+const { createPaymentIntent, createCustomer, createInvoice } = useAPI();
 
 function mountPayPalButton() {
   // creates the payment intent for PayPal
   // mounts the PayPal button inside the container element.
-  alertStatus.type = undefined;
-  alertStatus.msg = undefined;
+  alertBag.value = [];
 
   cbInstancePayPal.load("paypal").then((paypalHandler) => {
     createPaymentIntent({
@@ -100,40 +71,70 @@ function mountPayPalButton() {
         return paypalHandler.handlePayment();
       })
       .then((paymentIntent) => {
-        // handle success
-        // payment intent status = authorized
+        // payment intent authorized
         console.log("payment intent", paymentIntent);
+        addAlert("success", `Payment is ${paymentIntent.status}`);
         // collect customer details
         const customerDetails = {
           first_name: paymentIntent.payer_info.customer.firstName,
           last_name: paymentIntent.payer_info.customer.lastName,
           email: paymentIntent.payer_info.customer.email,
-          payment_intent: paymentIntent,
-          payment_method: {
-            type: "paypal_express_checkout",
+          payment_intent: {
+            id: paymentIntent.id,
+            // gateway_account_id: paymentIntent.gateway_account_id,
+            // gw_token: "",
+            // payment_method_type: paymentIntent.payment_method_type,
           },
           gateway_account_id: "gw_BTLWOTSyiKGENPbI",
         };
         // create new customer
         createCustomer(customerDetails)
           .then(({ customer }) => {
-            alertStatus.type = "success";
-            alertStatus.msg = `Payment is ${paymentIntent.status}`;
+            // new customer created.
             console.log("customer created: ", customer);
-            // display info
-            displayInfo(customer, paymentIntent);
+            // generate invoice
+            const invoiceData = {
+              customer_id: customer.id,
+              currency_code: "USD",
+              // payment_intent: {
+              //   id: paymentIntent.id,
+              // },
+              item_prices: [
+                {
+                  item_price_id: "hundred-credits",
+                  unit_price: paymentIntent.amount,
+                },
+              ],
+            };
+            console.log("invoiceData", invoiceData);
+            // generates invoice by calling the API
+            createInvoice(invoiceData)
+              .then(({ invoice }) => {
+                console.log("invoice generated", invoice);
+                displayInfo(
+                  {
+                    first_name: customer.first_name,
+                    last_name: customer.last_name,
+                    id: customer.id,
+                  },
+                  paymentIntent,
+                  invoice
+                );
+                resetCardDetailsForm();
+              })
+              .catch((error) => {
+                addAlert("error", "Failed to generate an invoice");
+                console.error("Failed to generate an invoice", error);
+              });
           })
           .catch((error) => {
-            console.log("error creating the customer", error);
-            alertStatus.type = "error";
-            alertStatus.msg = `Failed to create a customer`;
+            console.error("failed to create a customer", error);
+            addAlert("error", "Failed to create a customer");
           });
       })
       .catch((error) => {
-        console.log("error", error);
-        alertStatus.type = "error";
-        alertStatus.msg = `Failed to authorize`;
-        // handle error
+        console.error("error", error);
+        addAlert("error", "Failed to authorize");
       });
   });
 }
@@ -157,31 +158,10 @@ function loadCardPayment() {
         // payment intent status = inited
         threeDS.setPaymentIntent(paymentIntent);
       }
-    });
-}
-// create customer API call
-function createCustomer(options) {
-  const myHeaders = new Headers();
-  myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
-
-  const urlencoded = new URLSearchParams();
-  Object.keys(options).forEach((key) => {
-    urlencoded.append(key, options[key]);
-  });
-
-  const requestOptions = {
-    method: "POST",
-    headers: myHeaders,
-    body: urlencoded,
-    redirect: "follow",
-  };
-
-  return fetch("http://localhost:3000/api/customer", requestOptions)
-    .then(function (response) {
-      return response.json();
     })
-    .then(function (responseJson) {
-      return responseJson;
+    .catch((error) => {
+      console.error("error", error);
+      addAlert("error", "Failed to initiate payment intent");
     });
 }
 
@@ -190,8 +170,7 @@ function formSubmitionHandler() {
     console.log("cbInstance isn't loaded");
     return;
   }
-  alertStatus.type = undefined;
-  alertStatus.msg = undefined;
+  alertBag.value = [];
   isLoading.value = true;
   const modifiedCardDetails = {
     ...Object.fromEntries(
@@ -199,7 +178,6 @@ function formSubmitionHandler() {
     ),
     number: cardNumber.value,
   };
-  console.log("modified card", modifiedCardDetails);
   threeDS
     .handleCardPayment({
       card: modifiedCardDetails,
@@ -207,7 +185,7 @@ function formSubmitionHandler() {
     .then((paymentIntent) => {
       // payment intent status = authorized
       // create customer
-      const customerData = {
+      const customerPayload = {
         first_name: cardDetails.firstName,
         last_name: cardDetails.lastName,
         card: {
@@ -218,6 +196,8 @@ function formSubmitionHandler() {
           expiry_month: cardDetails.expiryMonth,
           expiry_year: cardDetails.expiryYear,
           cvv: cardDetails.cvv,
+          billing_country: "LK",
+          billing_zip: "10300",
           payment_intent: {
             id: paymentIntent.id,
             gateway_account_id: paymentIntent.gateway_account_id,
@@ -226,24 +206,52 @@ function formSubmitionHandler() {
           },
         },
       };
-      console.log("after submission", paymentIntent);
-      console.log("before customerData", customerData);
-      console.log("creating new customer...");
-      createCustomer(customerData).then(({ customer }) => {
-        console.log("customer created", customer);
 
-        console.log(`Payment is ${paymentIntent.status}`);
-        alertStatus.type = "success";
-        alertStatus.msg = `Payment is ${paymentIntent.status}`;
-        isLoading.value = false;
-        displayInfo(customer, paymentIntent);
-        resetCardDetailsForm();
-      });
+      // create new customer
+      createCustomer(customerPayload)
+        .then(({ customer }) => {
+          console.log("customer created", customer);
+          addAlert("success", `Payment is ${paymentIntent.status}`);
+          // generate invoice
+          const invoicePayload = {
+            customer_id: customer.id,
+            currency_code: "USD",
+            payment_intent: {
+              id: paymentIntent.id,
+              // gateway_account_id: paymentIntent.gateway_account_id,
+              // payment_method_type: paymentIntent.payment_method_type,
+            },
+            item_prices: [
+              {
+                item_price_id: "hundred-credits",
+                unit_price: paymentIntent.amount,
+              },
+            ],
+          };
+          console.log("invoicePayload", invoicePayload);
+          // generates invoice by calling the API
+          createInvoice(invoicePayload)
+            .then(({ invoice }) => {
+              console.log("invoice generated", invoice);
+              isLoading.value = false;
+              displayInfo(customer, paymentIntent, invoice);
+              resetCardDetailsForm();
+            })
+            .catch((error) => {
+              isLoading.value = false;
+              console.error("error generating invoice", error);
+              addAlert("error", "Failed to generate an invoice");
+            });
+        })
+        .catch((error) => {
+          isLoading.value = false;
+          console.error("failed to create a customer", error);
+          addAlert("error", "Failed to create a customer");
+        });
     })
     .catch((error) => {
       console.log(`Failed to Authorize`, error);
-      alertStatus.type = "error";
-      alertStatus.msg = `Failed to Authorize`;
+      addAlert("error", "Failed to Authorize");
       isLoading.value = false;
     });
 }
@@ -264,7 +272,7 @@ function resetInfo() {
   info.transactionID = undefined;
 }
 
-function displayInfo(customer, authorizedPaymentIntent) {
+function displayInfo(customer, authorizedPaymentIntent, invoice) {
   if (customer.first_name && customer.last_name) {
     info.customerName = `${customer.first_name} ${customer.last_name}`;
   } else if (customer.first_name) {
@@ -273,32 +281,40 @@ function displayInfo(customer, authorizedPaymentIntent) {
     info.customerName = customer.last_name;
   }
   info.chargebee_id = customer.id;
-  info.invoiceID = undefined;
+  info.invoiceID = invoice.id;
   info.transactionID = authorizedPaymentIntent.id;
 }
 
 function paymentTypeSelectHandler() {
-  alertStatus.type = undefined;
-  alertStatus.msg = undefined;
+  alertBag.value = [];
   resetInfo();
 }
 
+function addAlert(type, msg) {
+  alertBag.value.push({
+    type: type,
+    msg: msg,
+  });
+}
 onMounted(() => {
   // create chargebee instances
+  const site = import.meta.env.VITE_CHARGEBEE_PUBLISHABLE_SITE;
+  const publishableKey = import.meta.env.VITE_CHARGEBEE_KEY;
+
+  // chargebee instance for card payments.
   // eslint-disable-next-line no-undef
   cbInstanceCard = Chargebee.init({
-    site: "poliigon-test",
-    publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
-    // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
+    site: site,
+    publishableKey: publishableKey,
   });
+  // chargebee instance for paypal payments.
   // eslint-disable-next-line no-undef
   cbInstancePayPal = Chargebee.init({
-    site: "poliigon-test",
-    publishableKey: "test_hJdA7C4QBzAdoAjzCpw0ZI6lo7ONkCaA",
-    // publishableKey: "test_cdDdio6tN9ZymCiKzP2ZgC8z6AUHbZEv",
+    site: site,
+    publishableKey: publishableKey,
   });
-  // mountPayPalButton();
-  // loadCardPayment();
+  mountPayPalButton();
+  loadCardPayment();
 });
 </script>
 
@@ -315,7 +331,10 @@ onMounted(() => {
           id="payment_type_card"
           @change="paymentTypeSelectHandler"
         />
-        <label class="label" for="payment_type_card"
+        <label
+          class="label"
+          :class="{ 'font-weight-bold': paymentType === 'card' }"
+          for="payment_type_card"
           >Credit or debit card</label
         >
       </div>
@@ -410,17 +429,24 @@ onMounted(() => {
           id="payment_type_paypal"
           @change="paymentTypeSelectHandler"
         />
-        <label class="label" for="payment_type_paypal">Pay with PayPal</label>
+        <label
+          class="label"
+          :class="{ 'font-weight-bold': paymentType === 'paypal' }"
+          for="payment_type_paypal"
+          >Pay with PayPal</label
+        >
       </div>
       <div class="paypal-section-body" v-show="paymentType === 'paypal'">
         <div id="paypal-button" class="mt-8"></div>
       </div>
     </div>
     <Alert
-      :error="alertStatus.type === 'error'"
-      :success="alertStatus.type === 'success'"
-      v-if="alertStatus.type"
-      >{{ alertStatus.msg }}</Alert
+      :error="alert.type === 'error'"
+      :success="alert.type === 'success'"
+      class="mt-4"
+      v-for="(alert, index) in alertBag"
+      :key="index"
+      >{{ alert.msg }}</Alert
     >
     <div class="info py-4">
       <p>

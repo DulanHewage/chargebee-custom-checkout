@@ -1,6 +1,6 @@
 <template>
   <header>
-    <div class="wrapper">
+    <div class="wrapper d-flex align-items-center justify-content-center">
       <nav>
         <RouterLink to="/">Home</RouterLink>
         <RouterLink to="/customers">Customers</RouterLink>
@@ -14,20 +14,14 @@
 <script setup>
 import { RouterLink, RouterView } from "vue-router";
 import { onMounted } from "vue";
-import { useCustomerStore } from "../src/stores/customers";
+import useAPI from "./api/useAPI";
+import { useCustomerStore } from "./stores/customers";
 
 const customerStore = useCustomerStore();
+const { retrieveCustomers } = useAPI();
 
-function retrieveCustomers() {
-  // Retrieves a list of customers from Chargebee
-  // Fetches data from API (/customers)
-  const requestOptions = {
-    method: "GET",
-    redirect: "follow",
-  };
-
-  fetch("http://localhost:3000/api/customer/list", requestOptions)
-    .then((response) => response.json())
+onMounted(() => {
+  retrieveCustomers()
     .then((result) => {
       // Sets retrieved customer data to customerStore
       result
@@ -36,10 +30,30 @@ function retrieveCustomers() {
           customerStore.setCustomer(customer);
         });
     })
-    .catch((error) => console.log("error", error));
-}
-
-onMounted(() => {
-  retrieveCustomers();
+    .catch((error) => console.error("error", error));
 });
 </script>
+
+<style lang="scss" scoped>
+.wrapper {
+  height: 60px;
+  nav {
+    a {
+      font-size: 1.2rem;
+      font-weight: bold;
+      text-decoration: none;
+      margin-right: 16px;
+      color: #212529;
+      border-bottom-color: transparent;
+      border-bottom-width: 1px;
+      border-bottom-style: solid;
+      &:last-child {
+        margin-right: 0;
+      }
+      &.router-link-active {
+        border-bottom-color: #212529;
+      }
+    }
+  }
+}
+</style>

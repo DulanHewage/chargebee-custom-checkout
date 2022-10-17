@@ -4,11 +4,19 @@ defineProps({
     type: Boolean,
     defaukt: false,
   },
+  disabled: {
+    type: Boolean,
+    defaukt: false,
+  },
 });
 </script>
 
 <template>
-  <button v-bind="$attrs" class="d-flex align-items-center" :disabled="loading">
+  <button
+    v-bind="$attrs"
+    class="d-flex align-items-center"
+    :disabled="loading || disabled"
+  >
     <div class="prepend mr-4">
       <div class="loading-icon" v-if="loading">
         <svg
